@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://marwan-portfolio-5il.pages.dev/sitemap.xml
