@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://marwan-portfolio-5il.pages.dev/sitemap.xml
+Sitemap: https://marwan-algamal.pages.dev/sitemap.xml
