@@ -45,7 +45,7 @@ for (const cat of cats) {
 fs.writeFileSync(path.join(DIST, 'photos.json'), JSON.stringify(manifest));
 let html = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
 // Keep the first-paint photo count honest; the page updates it again once all photos load.
-html = html.replace('id="statPhotos" data-count="10" data-suffix="">10<', `id="statPhotos" data-count="${manifest.length}" data-suffix="">${manifest.length}<`);
+html = html.replace(/id="statPhotos" data-count="\d+" data-suffix=">\d+</, 'id="statPhotos" data-count="9" data-suffix=">9<');
 fs.writeFileSync(path.join(DIST, 'index.html'), html);
 for (const f of ['robots.txt', 'sitemap.xml', 'og.jpg']) {
   if (fs.existsSync(path.join(ROOT, f))) fs.copyFileSync(path.join(ROOT, f), path.join(DIST, f));
