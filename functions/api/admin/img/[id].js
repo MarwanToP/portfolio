@@ -5,5 +5,5 @@ export async function onRequestGet({ params, env }) {
   if (!isId(params.id)) return new Response('Not found', { status: 404 });
   const img = await readImage(env, params.id, 'thumb') || await readImage(env, params.id, 'full');
   if (!img) return new Response('Not found', { status: 404 });
-  return new Response(img.bytes, { headers: { 'Content-Type': img.type, 'Cache-Control': 'private, no-store' } });
+  return new Response(img.body, { headers: { 'Content-Type': img.type, 'Cache-Control': 'private, max-age=300' } });
 }

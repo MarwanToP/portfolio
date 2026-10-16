@@ -62,7 +62,16 @@ header{display:flex;justify-content:space-between;align-items:end;gap:var(--s3);
       <label for="cat" class="muted">Category for new uploads</label>
       <select id="cat"></select>
     </div>
+    <div class="bar">
+      <button id="publishAll" class="primary" type="button" hidden>Publish all drafts</button>
+      <span class="muted" id="draftCount"></span>
+    </div>
     <div class="queue" id="queue"></div>
+    <div id="failed" hidden>
+      <p class="bad" id="failedTitle"></p>
+      <ul id="failedList"></ul>
+      <button id="retryFailed" type="button">Retry failed files</button>
+    </div>
     <p class="muted" id="msg" role="status"></p>
 
     <div class="grid" id="grid"></div>
@@ -108,7 +117,27 @@ function render() {
   const live = photos.filter(p => p.status === 'published').length;
   $('#count').textContent = `${photos.length} photos, ${live} published`;
   $('#empty').hidden = photos.length > 0;
+  updateDrafts();
 }
+
+function updateDrafts() {
+  const n = photos.filter(p => p.status !== 'published').length;
+  $('#publishAll').hidden = n === 0;
+  $('#publishAll').textContent = `Publish all ${n} draft${n === 1 ? '' : 's'}`;
+  $('#draftCount').textContent = n ? '' : '';
+}
+
+$('#publishAll').addEventListener('click', async () => {
+  const n = photos.filter(p => p.status !== 'published').length;
+  if (!n || !confirm(`Publish all ${n} drafts so they appear on the site?`)) return;
+  $('#publishAll').disabled = true;
+  const r = await api('/publish-all', { method: 'POST' });
+  $('#publishAll').disabled = false;
+  if (!r.ok) return say('Could not publish. Try again.', true);
+  const j = await r.json();
+  say(`Published ${j.published} photo${j.published === 1 ? '' : 's'}. They are live on the site now.`);
+  await refresh();
+});
 
 async function patch(id, body) {
   const r = await api('/photos/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -116,10 +145,21 @@ async function patch(id, body) {
   return r.ok;
 }
 
+// Load previews a few at a time so a big library does not overwhelm the server.
+let thumbActive = 0; const thumbWaiting = [];
+function thumbQueue(job) { thumbWaiting.push(job); pump(); }
+function pump() {
+  while (thumbActive < 4 && thumbWaiting.length) {
+    thumbActive++;
+    thumbWaiting.shift()().finally(() => { thumbActive--; pump(); });
+  }
+}
+
 function card(p) {
   const el = document.createElement('article'); el.className = 'card';
   const img = new Image(); img.alt = p.title;
-  api('/img/' + p.id).then(r => r.blob()).then(b => { img.src = URL.createObjectURL(b); });
+  img.loading = 'lazy';
+  thumbQueue(() => api('/img/' + p.id).then(r => { if (!r.ok) throw 0; return r.blob(); }).then(b => { img.src = URL.createObjectURL(b); }).catch(() => { img.alt = 'Preview unavailable'; }));
 
   const title = document.createElement('input');
   title.value = p.title; title.maxLength = 120; title.setAttribute('aria-label', 'Title');
@@ -138,6 +178,7 @@ function card(p) {
     toggle.textContent = live ? 'Unpublish' : 'Publish';
     toggle.className = live ? '' : 'primary';
     $('#count').textContent = `${photos.length} photos, ${photos.filter(x => x.status === 'published').length} published`;
+    updateDrafts();
   };
   toggle.addEventListener('click', async () => {
     const next = p.status === 'published' ? 'draft' : 'published';
@@ -175,37 +216,73 @@ function queueRow(name) {
   return { img, set(t, bad) { text.textContent = name + ': ' + t; text.className = bad ? 'bad' : ''; }, row };
 }
 
-async function upload(files) {
-  say('');
-  for (const f of files) {
-    if (!f.type.startsWith('image/')) { say(f.name + ' is not an image.', true); continue; }
-    const q = queueRow(f.name);
-    try {
-      let blob = await compress(f);
-      for (let qlt = 0.75; blob.size > 1_300_000 && qlt > 0.4; qlt -= 0.1) { // keep each photo small enough to store
-        const bmp = await createImageBitmap(f); const k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
-        const c = new OffscreenCanvas(Math.round(bmp.width * k), Math.round(bmp.height * k));
-        c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-        blob = await c.convertToBlob({ type: 'image/webp', quality: qlt });
-      }
-      q.img.src = URL.createObjectURL(blob);
-      q.set('uploading (' + Math.round(blob.size / 1024) + ' KB)');
-      const thumbBlob = await compress(f, 800);
-      const dims = await createImageBitmap(blob);
-      const fd = new FormData();
-      fd.append('file', blob, 'photo.webp');
-      fd.append('thumb', thumbBlob, 'thumb.webp');
-      fd.append('w', dims.width); fd.append('h', dims.height);
-      fd.append('title', f.name.replace(/\.[^.]+$/, ''));
-      fd.append('category', $('#cat').value);
-      const r = await api('/photos', { method: 'POST', body: fd });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Upload failed.');
-      q.set('saved as draft');
-    } catch (e) { q.set(e.message, true); }
-  }
-  await refresh();
-  setTimeout(() => $('#queue').replaceChildren(), 4000);
+let failedFiles = [];
+function showFailed() {
+  $('#failed').hidden = failedFiles.length === 0;
+  $('#failedTitle').textContent = `${failedFiles.length} file${failedFiles.length === 1 ? '' : 's'} did not upload:`;
+  $('#failedList').replaceChildren(...failedFiles.map(x => { const li = document.createElement('li'); li.textContent = `${x.file.name} — ${x.reason}`; return li; }));
 }
+
+async function uploadOne(f, cat, q) {
+  if (!f.type.startsWith('image/') && !/\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(f.name)) throw new Error('not an image file');
+  let blob;
+  try { blob = await compress(f); }
+  catch { throw new Error('this browser cannot open this format (HEIC/RAW?). Export it as JPG first'); }
+  for (let qlt = 0.75; blob.size > 1_300_000 && qlt > 0.4; qlt -= 0.1) {
+    const bmp = await createImageBitmap(f); const k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    const c = new OffscreenCanvas(Math.round(bmp.width * k), Math.round(bmp.height * k));
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    blob = await c.convertToBlob({ type: 'image/webp', quality: qlt });
+  }
+  const thumbBlob = await compress(f, 800);
+  const dims = await createImageBitmap(blob);
+  q.img.src = URL.createObjectURL(thumbBlob);
+  q.set('uploading (' + Math.round(blob.size / 1024) + ' KB)');
+  const fd = new FormData();
+  fd.append('file', blob, 'photo.webp');
+  fd.append('thumb', thumbBlob, 'thumb.webp');
+  fd.append('w', dims.width); fd.append('h', dims.height);
+  fd.append('title', f.name.replace(/\.[^.]+$/, ''));
+  fd.append('category', cat);
+  let lastErr = 'upload failed';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await api('/photos', { method: 'POST', body: fd });
+      if (r.ok) return;
+      lastErr = (await r.json().catch(() => ({}))).error || ('server error ' + r.status);
+      if (r.status === 401) { lock('Session expired. Enter the token again.'); throw new Error('session expired'); }
+      if (r.status < 500) break;
+    } catch (e) { lastErr = e.message || 'network error'; }
+    await new Promise(res => setTimeout(res, 800 * attempt));
+  }
+  throw new Error(lastErr);
+}
+
+async function upload(files, keepFailed) {
+  say('');
+  const list = [...files];
+  const cat = $('#cat').value;
+  if (!keepFailed) failedFiles = [];
+  else failedFiles = [];
+  let done = 0, ok = 0;
+  const total = list.length;
+  const worker = async () => {
+    while (list.length) {
+      const f = list.shift();
+      const q = queueRow(f.name);
+      try { await uploadOne(f, cat, q); q.set('saved as draft'); ok++; }
+      catch (e) { q.set(e.message, true); failedFiles.push({ file: f, reason: e.message }); }
+      done++; say(`Uploaded ${ok} of ${total} (${done} processed)…`);
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  say(`Done: ${ok} of ${total} uploaded${failedFiles.length ? `, ${failedFiles.length} failed (listed below)` : ''}. Photos are drafts until you publish them.`, failedFiles.length > 0);
+  showFailed();
+  await refresh();
+  setTimeout(() => $('#queue').replaceChildren(), 6000);
+}
+
+$('#retryFailed').addEventListener('click', () => { const again = failedFiles.map(x => x.file); upload(again, true); });
 
 const drop = $('#drop'), fileInput = $('#file');
 drop.addEventListener('click', () => fileInput.click());

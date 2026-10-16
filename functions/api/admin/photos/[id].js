@@ -14,9 +14,7 @@ export async function onRequestPatch({ params, request, env }) {
 
 export async function onRequestDelete({ params, env }) {
   if (!isId(params.id)) return json({ error: 'Bad id.' }, 400);
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM photo_data WHERE id = ?').bind(params.id),
-    env.DB.prepare('DELETE FROM photos WHERE id = ?').bind(params.id),
-  ]);
+  await Promise.all([env.PHOTOS.delete(`full:${params.id}`), env.PHOTOS.delete(`thumb:${params.id}`)]);
+  await env.DB.prepare('DELETE FROM photos WHERE id = ?').bind(params.id).run();
   return json({ ok: true });
 }

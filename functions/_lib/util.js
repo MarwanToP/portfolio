@@ -15,13 +15,8 @@ export async function sniff(file) {
   return webp ? 'image/webp' : jpeg ? 'image/jpeg' : null;
 }
 
-export function toB64(buf) {
-  const u = new Uint8Array(buf); let s = '';
-  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
-  return btoa(s);
-}
-export const fromB64 = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+// Photo bytes live in Workers KV (binary, no decoding work): keys "full:<id>" and "thumb:<id>".
 export async function readImage(env, id, kind) {
-  const row = await env.DB.prepare('SELECT type, data FROM photo_data WHERE id = ? AND kind = ?').bind(id, kind).first();
-  return row ? { type: row.type, bytes: fromB64(row.data) } : null;
+  const { value, metadata } = await env.PHOTOS.getWithMetadata(`${kind}:${id}`, { type: 'stream' });
+  return value ? { body: value, type: metadata?.type || 'image/webp' } : null;
 }
