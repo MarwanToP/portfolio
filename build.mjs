@@ -48,4 +48,7 @@ fs.writeFileSync(path.join(DIST, 'index.html'), html);
 for (const f of ['robots.txt', 'sitemap.xml', 'og.jpg']) {
   if (fs.existsSync(path.join(ROOT, f))) fs.copyFileSync(path.join(ROOT, f), path.join(DIST, f));
 }
+// Private admin page (token-protected API lives in /functions) + headers
+if (fs.existsSync(path.join(ROOT, 'admin'))) fs.cpSync(path.join(ROOT, 'admin'), path.join(DIST, 'admin'), { recursive: true });
+fs.writeFileSync(path.join(DIST, '_headers'), '/admin/*\n  X-Robots-Tag: noindex, nofollow\n  Cache-Control: no-store\n');
 console.log(`Built ${manifest.length} photos in ${cats.length} categories`);

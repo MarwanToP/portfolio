@@ -2975,8 +2975,15 @@ function renderGallery(list) {
 }
 
 if (grid) {
-  fetch('photos.json', { cache: 'no-cache' })
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  const loadList = (u) => fetch(u, { cache: 'no-cache' }).then(r => r.ok ? r.json() : []).catch(() => []);
+  Promise.all([loadList('/api/photos'), loadList('photos.json')])
+    .then(([api, local]) => {
+      const fromApi = api.map(p => ({ id: p.id, title: p.title, cat: p.category,
+        thumb: '/img/' + p.id + '?t=1', src: '/img/' + p.id, w: p.w || 1200, h: p.h || 1500 }));
+      const all = fromApi.concat(local);
+      if (!all.length) throw new Error('empty');
+      return all;
+    })
     .then(renderGallery)
     .catch(() => { grid.innerHTML = '<p class="gallery-empty">Photos could not be loaded. Please refresh.</p>'; });
 }
