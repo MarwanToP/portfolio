@@ -1911,6 +1911,10 @@
 
   .form-error { color: #f0b4b4; font-size: 0.85rem; line-height: 1.7; letter-spacing: 0.02em; }
   .contact-form input:invalid:not(:placeholder-shown):not(:focus) { border-color: #c98a8a; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+    .reveal { opacity: 1 !important; transform: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -2987,6 +2991,14 @@ if (grid) {
     .then(renderGallery)
     .catch(() => { grid.innerHTML = '<p class="gallery-empty">Photos could not be loaded. Please refresh.</p>'; });
 }
+
+// Escape closes the photo viewer and the mobile menu
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const lb = document.getElementById('lightbox');
+  if (lb && lb.classList.contains('open')) { const c = document.getElementById('lightboxClose'); if (c) c.click(); else lb.classList.remove('open'); }
+  if (mobileDrawer.classList.contains('open')) closeMobileNav();
+});
 
 // ── LIGHTBOX ───────────────────────────────────────────
 const lightbox = document.getElementById('lightbox');
