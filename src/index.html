@@ -443,6 +443,21 @@
     column-gap: 6px;
   }
   @media (max-width: 900px) { .gallery-grid { column-count: 2; } }
+  /* Rotating showcase: 3 horizontal + 3 vertical, photos change every 5 s */
+  .showcase { display:grid; gap:16px; margin-bottom:28px; }
+  .sc-row { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; }
+  .sc-slot { position:relative; overflow:hidden; background:#111; cursor:pointer; border:0; padding:0; border-radius:2px; }
+  .sc-h .sc-slot { aspect-ratio:3 / 2; }
+  .sc-v .sc-slot { aspect-ratio:3 / 4; }
+  .sc-slot img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity 1s ease; }
+  .sc-slot img.on { opacity:1; }
+  .sc-slot:focus-visible { outline:2px solid var(--gold); outline-offset:3px; }
+  .sc-slot .wm { position:absolute; right:8px; bottom:8px; }
+  .gallery-grid[hidden], .gallery-filter[hidden] { display:none !important; }
+  .gallery-toggle { display:block; margin:32px auto 0; padding:14px 34px; background:transparent; color:var(--gold); border:1px solid var(--gold); letter-spacing:.2em; text-transform:uppercase; font-size:.78rem; cursor:pointer; }
+  .gallery-toggle:hover { background:var(--gold); color:#0a0a0a; }
+  @media (max-width:640px) { .showcase, .sc-row { gap:8px; } }
+  @media (prefers-reduced-motion: reduce) { .sc-slot img { transition:none; } }
   .gallery-empty { color: var(--muted); padding: 40px 0; text-align: center; letter-spacing: .08em; }
   .gallery-item {
     position:relative; overflow:hidden;
@@ -2928,6 +2943,65 @@ function renderGallery(list) {
   PHOTOS = list;
   grid.innerHTML = '';
   if (!list.length) { grid.innerHTML = '<p class="gallery-empty">Photos coming soon.</p>'; return; }
+
+  // ── Showcase: 3 horizontal + 3 vertical photos, swapped every 5 seconds ──
+  const openViewer = p => {
+    const frame = document.getElementById('lightboxFrame');
+    frame.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = p.src; img.alt = p.cat + ' photograph by Marwan Al-Gamal';
+    img.style.cssText = 'max-width:100%;max-height:70vh;object-fit:contain;display:block;';
+    frame.appendChild(img);
+    document.getElementById('lightboxTitle').textContent = '';
+    document.getElementById('lightboxCat').textContent = p.cat;
+    document.getElementById('lightbox').classList.add('open');
+  };
+  const horiz = list.filter(p => p.w >= p.h), vert = list.filter(p => p.w < p.h);
+  const sc = document.createElement('div'); sc.className = 'showcase'; sc.id = 'showcase';
+  const groups = [];
+  [['h', horiz], ['v', vert]].forEach(([kind, arr]) => {
+    if (!arr.length) return;
+    const row = document.createElement('div'); row.className = 'sc-row sc-' + kind;
+    const slots = [0, 1, 2].map(() => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'sc-slot';
+      b.innerHTML = '<img alt="" decoding="async"><img alt="" decoding="async">';
+      row.appendChild(b); return { el: b, imgs: b.querySelectorAll('img'), cur: -1, p: null };
+    });
+    slots.forEach(sl => sl.el.addEventListener('click', () => sl.p && openViewer(sl.p)));
+    sc.appendChild(row); groups.push({ arr, slots, next: 0 });
+  });
+  grid.parentNode.insertBefore(sc, grid);
+
+  const show = (sl, p, instant) => {
+    const [a, b] = sl.imgs, incoming = a.classList.contains('on') ? b : a, outgoing = incoming === a ? b : a;
+    sl.p = p;
+    const swap = () => { incoming.classList.add('on'); outgoing.classList.remove('on'); };
+    incoming.onload = swap;
+    incoming.alt = p.cat + ' photograph by Marwan Al-Gamal';
+    incoming.src = p.thumb;
+    sl.el.setAttribute('aria-label', 'Open ' + p.cat + ' photograph');
+    if (incoming.complete && incoming.naturalWidth) swap();
+  };
+  const step = (first) => groups.forEach(g => g.slots.forEach((sl, i) => {
+    const p = g.arr[(g.next + i) % g.arr.length];
+    setTimeout(() => show(sl, p), first ? 0 : i * 250);
+  })) || groups.forEach(g => { g.next = (g.next + 3) % g.arr.length; });
+  step(true);
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    setInterval(() => { if (!document.hidden) step(false); }, 5000);
+  }
+
+  // The full collection sits behind one button
+  grid.hidden = true; filterBar.hidden = true;
+  const toggle = document.createElement('button');
+  toggle.type = 'button'; toggle.className = 'gallery-toggle';
+  toggle.textContent = 'Browse all ' + list.length + ' photos';
+  toggle.addEventListener('click', () => {
+    const open = grid.hidden;
+    grid.hidden = !open; filterBar.hidden = !open;
+    toggle.textContent = open ? 'Hide full collection' : 'Browse all ' + list.length + ' photos';
+  });
+  grid.insertAdjacentElement('afterend', toggle);
 
   list.forEach(p => {
     const item = document.createElement('div');
