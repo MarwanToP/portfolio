@@ -458,6 +458,15 @@
   .gallery-toggle:hover { background:var(--gold); color:#0a0a0a; }
   @media (max-width:640px) { .showcase, .sc-row { gap:8px; } }
   @media (prefers-reduced-motion: reduce) { .sc-slot img { transition:none; } }
+  /* Phone polish */
+  @media (max-width: 700px) {
+    .process-steps { grid-template-columns: 1fr !important; }
+    .process-step { padding: 36px 24px 28px; }
+    .gallery-live-header { flex-wrap: wrap; gap: 10px; }
+    .bc-fab { display: none !important; }
+    .back-top { right: 76px !important; bottom: 28px !important; width: 40px; height: 40px; }
+    .wa-btn { bottom: 24px !important; }
+  }
   .gallery-empty { color: var(--muted); padding: 40px 0; text-align: center; letter-spacing: .08em; }
   .gallery-item {
     position:relative; overflow:hidden;
@@ -479,7 +488,7 @@
   }
   .gallery-item:hover .gallery-item-overlay { opacity:1; }
   .gi-title { font-family:'Cormorant Garamond',serif; font-size:1rem; font-weight:300; }
-  .gi-cat { font-size:0.79rem; letter-spacing:0.3em; text-transform:uppercase; color:var(--gold); margin-top:4px; }
+  .gi-cat { font-size:0.82rem; letter-spacing:0.3em; text-transform:uppercase; color:var(--gold); margin-top:4px; }
 
   /* Gallery item backgrounds — cinematic gradients as placeholders */
   .gi-bg { width:100%; height:100%; }
@@ -1869,7 +1878,7 @@
 
   /* ─── BACK TO TOP ────────────────────────────────── */
   .back-top {
-    position: fixed; bottom: 36px; left: 36px; z-index: 2000;
+    position: fixed; bottom: 36px; right: 96px; left: auto; z-index: 2000;
     width: 44px; height: 44px;
     background: rgba(8,8,8,0.85); border: 1px solid rgba(201,169,110,0.25);
     display: flex; align-items: center; justify-content: center;
@@ -2445,7 +2454,7 @@
       <div class="form-row">
         <div class="form-group">
           <label for="cf-first">First name</label>
-          <input id="cf-first" name="first_name" type="text" autocomplete="given-name" required/>
+          <input id="cf-first" name="first_name" type="text" placeholder=" " autocomplete="given-name" required/>
         </div>
         <div class="form-group">
           <label for="cf-last">Last name</label>
