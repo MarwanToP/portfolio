@@ -460,6 +460,8 @@
   @media (prefers-reduced-motion: reduce) { #galleryRotatingWord { transition:none; } }
   p, .about-body, .hero-sub, .service-desc, .ps-desc, .contact-body { font-size:clamp(.98rem, 1.1vw, 1.05rem); line-height:1.75; letter-spacing:.015em; }
 
+  .gallery-more { display:block; margin:40px auto 0; padding:14px 34px; background:transparent; color:var(--gold); border:1px solid var(--gold); letter-spacing:.2em; text-transform:uppercase; font-size:.78rem; cursor:pointer; }
+  .gallery-more:hover { background:var(--gold); color:#0a0a0a; }
   .gallery-empty { color: var(--muted); padding: 40px 0; text-align: center; letter-spacing: .08em; }
   .gallery-item {
     position:relative; overflow:hidden;
@@ -2857,23 +2859,22 @@ function applyFilter(f) {
   });
 }
 
-function renderGallery(list) {
+function renderGallery(list, more) {
   PHOTOS = list;
   grid.innerHTML = '';
   if (!list.length) { grid.innerHTML = '<p class="gallery-empty">Photos coming soon.</p>'; return; }
 
-  list.forEach(p => {
+  const makeItem = p => {
     const item = document.createElement('div');
     item.className = 'gallery-item layout-' + (p.w >= p.h ? 'landscape' : 'portrait');
     item.setAttribute('role', 'button');
     item.tabIndex = 0;
-    item.setAttribute('aria-label', 'Open ' + (p.title || p.cat) + ' photograph');
+    item.setAttribute('aria-label', 'Open ' + p.cat + ' photograph');
     item.dataset.cat = p.cat;
-    item.dataset.title = p.title || '';
+    item.dataset.title = '';
     item.innerHTML = `
-      <img class="gi-photo" src="${esc(p.thumb)}" alt="${esc(p.title || p.cat)} — ${esc(p.cat)} photograph by Marwan Al-Gamal" width="${p.w}" height="${p.h}" loading="lazy" decoding="async"/>
+      <img class="gi-photo" src="${esc(p.thumb)}" alt="${esc(p.cat)} photograph by Marwan Al-Gamal" width="${p.w}" height="${p.h}" loading="lazy" decoding="async"/>
       <div class="gallery-caption">
-        <span class="gi-title">${esc(p.title || 'Selected frame')}</span>
         <span class="gi-cat">${esc(p.cat)}</span>
       </div>
       <div class="wm">${WATERMARK_SVG}</div>`;
@@ -2882,18 +2883,33 @@ function renderGallery(list) {
       const frame = document.getElementById('lightboxFrame');
       frame.innerHTML = '';
       const img = document.createElement('img');
-      img.src = p.src; img.alt = (p.title || p.cat) + ' — ' + p.cat + ' photograph by Marwan Al-Gamal';
+      img.src = p.src; img.alt = p.cat + ' photograph by Marwan Al-Gamal';
       img.style.cssText = 'max-width:100%;max-height:70vh;object-fit:contain;display:block;';
       frame.appendChild(img);
-      document.getElementById('lightboxTitle').textContent = p.title || '';
+      document.getElementById('lightboxTitle').textContent = '';
       document.getElementById('lightboxCat').textContent = p.cat;
       document.getElementById('lightbox').classList.add('open');
     });
-    grid.appendChild(item);
-  });
+    return item;
+  };
+  list.forEach(p => grid.appendChild(makeItem(p)));
+
+  // The rest of the collection sits one click away
+  if (more && more.length) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'gallery-more';
+    btn.textContent = 'Show all ' + (list.length + more.length) + ' photos';
+    btn.addEventListener('click', () => {
+      more.forEach(p => grid.appendChild(makeItem(p)));
+      btn.remove();
+      const active = filterBar.querySelector('.filter-btn.active');
+      if (active) applyFilter(active.dataset.filter);
+    });
+    grid.insertAdjacentElement('afterend', btn);
+  }
 
   // Filter buttons, one per category folder
-  [...new Set(list.map(p => p.cat))].forEach(cat => {
+  [...new Set(list.concat(more || []).map(p => p.cat))].forEach(cat => {
     const b = document.createElement('button');
     b.className = 'filter-btn'; b.dataset.filter = cat; b.textContent = cat;
     filterBar.appendChild(b);
@@ -2912,28 +2928,26 @@ function renderGallery(list) {
     hero.style.backgroundSize = 'cover'; hero.style.backgroundPosition = 'center';
   }
   const sp = document.getElementById('statPhotos');
-  if (sp) { sp.dataset.count = list.length; sp.textContent = list.length; }
+  if (sp) { const n = list.length + (more ? more.length : 0); sp.dataset.count = n; sp.textContent = n; }
 }
 
 function chooseFeatured(api, local) {
-  const source = api.length ? api.map(p => ({ ...p, cat: p.category, thumb: '/img/' + p.id + '?t=1', src: '/img/' + p.id })) : local.filter(p => FEATURED_STATIC_IDS.has(p.id));
+  const source = api.length ? api.map(p => ({ ...p, cat: p.category, thumb: '/img/' + p.id + '?t=1', src: '/img/' + p.id })) : local;
   const landscape = source.filter(p => (p.w || 1200) >= (p.h || 1500));
   const portrait = source.filter(p => (p.w || 1200) < (p.h || 1500));
   const chosen = [...landscape.slice(0, 3), ...portrait.slice(0, 6)];
   for (const p of source) if (chosen.length < 9 && !chosen.includes(p)) chosen.push(p);
-  return chosen.slice(0, 9).map((p, index) => {
-    const title = p.title && !/^(untitled|\d+)$/i.test(p.title) && !/gemini_generated_image|^IMG_|watermarked/i.test(p.title) ? p.title : 'Field note ' + String(index + 1).padStart(2, '0');
-    return { ...p, title };
-  });
+  const featured = chosen.slice(0, 9);
+  return { featured, rest: source.filter(p => !featured.includes(p)) };
 }
 
 if (grid) {
   const loadList = (url) => fetch(url, { cache: 'no-cache' }).then(r => r.ok ? r.json() : []).catch(() => []);
   Promise.all([loadList('/api/photos'), loadList('photos.json')])
     .then(([api, local]) => {
-      const selected = chooseFeatured(api, local);
-      if (!selected.length) throw new Error('No featured photos are available');
-      renderGallery(selected);
+      const { featured, rest } = chooseFeatured(api, local);
+      if (!featured.length) throw new Error('No photos are available');
+      renderGallery(featured, rest);
     })
     .catch(() => { grid.innerHTML = '<p class="gallery-empty">Photos could not be loaded. Please refresh.</p>'; });
 }
@@ -2950,7 +2964,7 @@ document.addEventListener('keydown', e => {
 const lightbox = document.getElementById('lightbox');
 document.querySelectorAll('.gallery-item').forEach(item => {
   item.addEventListener('click', () => {
-    document.getElementById('lightboxTitle').textContent = item.dataset.title || '';
+    document.getElementById('lightboxTitle').textContent = '';
     document.getElementById('lightboxCat').textContent = (item.dataset.cat || '').toUpperCase() + ' · ' + (item.dataset.year || '');
     lightbox.classList.add('open');
   });
